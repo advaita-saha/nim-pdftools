@@ -19,15 +19,29 @@ compiled binary is written to `build/` (which is git-ignored).
 
 ## Usage
 
+The CLI is organised into subcommands so more PDF tools can be added later:
+
 ```
-pdftools [options] <input.pdf>
+pdftools <command> [options]
+
+Commands:
+  unlock    Decrypt (unlock) a password-protected PDF.
+
+Global:
+  -h, --help     Show help.
+      --version  Show version.
+```
+
+### `unlock`
+
+```
+pdftools unlock [options] <input.pdf>
 
   -p, --password:<pw>     Password (user or owner). If omitted, you are prompted.
       --password-file:<f> Read the password from file <f>.
   -o, --out:<path>        Write to <path> instead of overwriting in place.
       --keep-backup       Keep <input.pdf>.bak when overwriting in place.
-  -h, --help              Show help.
-      --version           Show version.
+  -h, --help              Show this command's help.
 ```
 
 By default the input file is **overwritten in place** with the unlocked PDF. The
@@ -41,8 +55,8 @@ tool tries both. Many PDFs are "owner-locked" with an empty user password — in
 that case just run without `-p` and press Enter at the prompt.
 
 ```sh
-pdftools -p 'secret' report.pdf            # overwrite report.pdf, unlocked
-pdftools -p 'secret' -o open.pdf report.pdf
+pdftools unlock -p 'secret' report.pdf            # overwrite report.pdf, unlocked
+pdftools unlock -p 'secret' -o open.pdf report.pdf
 ```
 
 ## Supported encryption

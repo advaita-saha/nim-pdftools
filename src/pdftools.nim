@@ -1,21 +1,39 @@
 # Copyright (c) 2026 Advaita Saha
 # SPDX-License-Identifier: MIT
 
-## pdftools — decrypt (unlock) a password-protected PDF.
+## pdftools — a command-line toolbox for PDF files.
 ##
-## Pure Nim, no third-party dependencies. Supports the Standard Security
-## Handler: RC4 (revisions 2-4), AES-128 (revision 4) and AES-256 (revision 6).
+## Pure Nim, no third-party dependencies. The CLI is organised into
+## subcommands (`pdftools <command> [options]`) so new tools can be added
+## alongside the existing `unlock` command.
 
 import
   std/[parseopt, os, terminal],
   pdf/writer,
   pdf/security
 
-const usage = """
-pdftools — unlock a password-protected PDF
+const version = "pdftools 0.1.0"
+
+const topUsage = """
+pdftools — a command-line toolbox for PDF files
 
 Usage:
-  pdftools [options] <input.pdf>
+  pdftools <command> [options]
+
+Commands:
+  unlock    Decrypt (unlock) a password-protected PDF.
+
+Run 'pdftools <command> --help' for command-specific options.
+Global:
+  -h, --help       Show this help.
+      --version    Show version.
+"""
+
+const unlockUsage = """
+pdftools unlock — decrypt a password-protected PDF
+
+Usage:
+  pdftools unlock [options] <input.pdf>
 
 Options:
   -p, --password:<pw>     Password (user or owner). If omitted, you are prompted.
@@ -23,7 +41,6 @@ Options:
   -o, --out:<path>        Write to <path> instead of overwriting <input.pdf> in place.
       --keep-backup       Keep <input.pdf>.bak when overwriting in place.
   -h, --help              Show this help.
-      --version           Show version.
 
 The unlocked PDF opens without a password. The original is overwritten in place
 unless -o is given; the write is atomic (temp file + rename) so a wrong password
@@ -40,7 +57,7 @@ proc fail(msg: string) =
   stderr.writeLine("pdftools: " & msg)
   quit(1)
 
-proc main() =
+proc cmdUnlock(args: seq[string]) =
   var
     input = ""
     password = ""
@@ -53,7 +70,7 @@ proc main() =
   # (`-p secret`) in addition to the attached form (`-p:secret`).
   var
     pending = ""
-    p = initOptParser(commandLineParams())
+    p = initOptParser(args)
   for kind, key, val in p.getopt():
     case kind
     of cmdArgument:
@@ -74,13 +91,12 @@ proc main() =
       of "o", "out":
         if val.len > 0: outPath = val else: pending = "out"
       of "keep-backup": keepBackup = true
-      of "h", "help": echo usage; quit(0)
-      of "version": echo "pdftools 0.1.0"; quit(0)
+      of "h", "help": echo unlockUsage; quit(0)
       else: fail("unknown option: " & key)
     of cmdEnd: discard
 
   if input.len == 0:
-    echo usage
+    echo unlockUsage
     quit(1)
   if not fileExists(input):
     fail("input file not found: " & input)
@@ -123,6 +139,23 @@ proc main() =
     stderr.writeLine("pdftools: unlocked " & input & " in place" &
       (if keepBackup: " (backup at " & input & ".bak)" else: "") &
       (if res.usedOwnerPassword: " [owner password]" else: ""))
+
+proc main() =
+  let params = commandLineParams()
+  if params.len == 0:
+    echo topUsage
+    quit(1)
+
+  let cmd = params[0]
+  let rest = params[1 .. ^1]
+  case cmd
+  of "-h", "--help", "help": echo topUsage; quit(0)
+  of "--version", "version": echo version; quit(0)
+  of "unlock": cmdUnlock(rest)
+  else:
+    stderr.writeLine("pdftools: unknown command '" & cmd & "'")
+    echo topUsage
+    quit(1)
 
 when isMainModule:
   main()
