@@ -1,0 +1,6 @@
+# Build output
+/build/
+
+# Nim / nimble artifacts
+nimcache/
+*.exe
