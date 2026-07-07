@@ -4,3 +4,5 @@
 # Nim / nimble artifacts
 nimcache/
 *.exe
+nimble.develop
+nimble.paths

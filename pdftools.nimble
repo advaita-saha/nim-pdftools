@@ -13,11 +13,15 @@ binDir        = "build"
 bin           = @["pdftools"]
 
 # Dependencies
-# Intentionally NONE beyond the compiler: everything (RC4, AES, SHA-2, DEFLATE
-# inflate, PDF parsing) is implemented on top of the Nim standard library only.
+# The implementation itself pulls in NOTHING beyond the compiler: RC4, AES,
+# SHA-2, DEFLATE inflate and PDF parsing are all built on the Nim standard
+# library only.
 
 requires "nim >= 2.0.0"
 
-task test, "Run the test suite":
-  exec "nim c -r --outdir:build tests/test_crypto.nim"
-  exec "nim c -r --outdir:build tests/test_pdf.nim"
+# unittest2 is the sole *testing* dependency. Scoping it to the `test` task keeps
+# it out of the package's runtime dependencies, so `nimble install` never pulls
+# it. Nimble drives the built-in test runner (it discovers tests/t*.nim), which
+# injects the task-dependency path into the compile — a bare `nim c` would not.
+# `-d:release` for the tests lives in tests/config.nims.
+taskRequires "test", "unittest2"
