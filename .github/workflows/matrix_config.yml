@@ -1,0 +1,27 @@
+name: Matrix config
+
+# Reusable workflow: loads the hand-picked platform/version combinations from
+# matrix-config.json and returns them, wrapped as `{ "include": [...] }`, so the
+# caller can assign it straight to `strategy.matrix`.
+
+on:
+  workflow_call:
+    outputs:
+      matrix:
+        description: "Build matrix generated from matrix-config.json"
+        value: ${{ jobs.matrix_config.outputs.matrix }}
+
+jobs:
+  matrix_config:
+    name: Generate matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read matrix-config.json
+        id: set-matrix
+        run: |
+          echo "matrix=$(jq --compact-output '{ include: . }' .github/workflows/matrix-config.json)" >> "$GITHUB_OUTPUT"
