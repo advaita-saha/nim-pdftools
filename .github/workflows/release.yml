@@ -1,0 +1,137 @@
+name: Release
+
+# Cut a release by pushing a tag:
+#   git tag v0.1.0 && git push origin v0.1.0
+# This builds a binary per platform, publishes a GitHub Release with the
+# tarballs + SHA-256 checksums, then regenerates the Homebrew formula in the
+# advaita-saha/homebrew-tap repo so `brew install advaita-saha/tap/pdftools`
+# picks up the new version.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos,   arch: arm64, runner: macos-15 }
+          - { os: linux,   arch: amd64, runner: ubuntu-22.04 }
+          - { os: linux,   arch: arm64, runner: ubuntu-22.04-arm }
+          - { os: windows, arch: amd64, runner: windows-2025 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: stable
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: nimble build -d:release -y
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          asset="pdftools-${version}-${{ matrix.os }}-${{ matrix.arch }}"
+          checksum() { if command -v shasum >/dev/null; then shasum -a 256 "$1"; else sha256sum "$1"; fi; }
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            # Windows ships a .zip (not a Homebrew platform — direct download only).
+            strip build/pdftools.exe || true
+            7z a "${asset}.zip" ./build/pdftools.exe >/dev/null
+            checksum "${asset}.zip" | tee "${asset}.zip.sha256"
+          else
+            strip build/pdftools || true
+            tar -czf "${asset}.tar.gz" -C build pdftools
+            checksum "${asset}.tar.gz" | tee "${asset}.tar.gz.sha256"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdftools-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            pdftools-*.tar.gz
+            pdftools-*.tar.gz.sha256
+            pdftools-*.zip
+            pdftools-*.zip.sha256
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/pdftools-*.tar.gz
+            dist/pdftools-*.tar.gz.sha256
+            dist/pdftools-*.zip
+            dist/pdftools-*.zip.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+  update-tap:
+    name: update homebrew formula
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for formula template)
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Render formula
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sha() { awk '{print $1}' "dist/pdftools-${version}-$1.tar.gz.sha256"; }
+          export VERSION="$version"
+          export SHA_MACOS_ARM64="$(sha macos-arm64)"
+          export SHA_LINUX_AMD64="$(sha linux-amd64)"
+          export SHA_LINUX_ARM64="$(sha linux-arm64)"
+          envsubst < packaging/homebrew/pdftools.rb.tmpl > pdftools.rb
+          echo "--- rendered Formula/pdftools.rb ---"
+          cat pdftools.rb
+
+      - name: Push to tap repo
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/advaita-saha/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp pdftools.rb tap/Formula/pdftools.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/pdftools.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date."
+          else
+            git commit -m "pdftools ${version}"
+            git push
+          fi
