@@ -108,6 +108,27 @@ jobs:
           } > NOTES.md
           cat NOTES.md
 
+      - name: Set up Go (for nfpm)
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Build .deb packages
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          mkdir -p debs
+          for arch in amd64 arm64; do
+            tar -xzf "dist/pdftools-${version}-linux-${arch}.tar.gz" -C .
+            VERSION="$version" DEB_ARCH="$arch" BIN_PATH="./pdftools" \
+              envsubst < packaging/nfpm/nfpm.yaml > nfpm.rendered.yaml
+            nfpm pkg --packager deb -f nfpm.rendered.yaml \
+              --target "debs/pdftools_${version}_${arch}.deb"
+            rm -f ./pdftools
+          done
+          ls -l debs
+
       - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
@@ -117,6 +138,7 @@ jobs:
           files: |
             dist/pdftools-*.tar.gz
             dist/pdftools-*.zip
+            debs/pdftools_*.deb
           fail_on_unmatched_files: true
 
   update-tap:

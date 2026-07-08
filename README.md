@@ -18,6 +18,17 @@ brew install advaita-saha/tap/pdftools
 
 This downloads a pre-built binary — no Nim toolchain required.
 
+Debian/Ubuntu (amd64 or arm64, glibc ≥ 2.35 — i.e. Debian 12+/Ubuntu 22.04+):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/advaita-saha/nim-pdftools/master/scripts/install.sh | sudo bash
+```
+
+The script downloads the `.deb` for the latest release and installs it with `apt`.
+Prefer to do it by hand? Grab `pdftools_<version>_<arch>.deb` from the
+[Releases](https://github.com/advaita-saha/nim-pdftools/releases) page and run
+`sudo apt install ./pdftools_<version>_<arch>.deb`.
+
 On **Windows**, download `pdftools-<version>-windows-amd64.zip` from the
 [Releases](https://github.com/advaita-saha/nim-pdftools/releases) page and unzip
 `pdftools.exe`.
