@@ -8,6 +8,22 @@ Every cryptographic and compression primitive it needs is implemented on top of
 the Nim standard library alone — RC4, AES-128/256, SHA-256/384/512 and a DEFLATE
 inflater are all hand-written; MD5 comes from `std/md5`.
 
+## Install
+
+Homebrew (macOS Apple Silicon, and Linux on x86-64 or ARM):
+
+```sh
+brew install advaita-saha/tap/pdftools
+```
+
+This downloads a pre-built binary — no Nim toolchain required.
+
+On **Windows**, download `pdftools-<version>-windows-amd64.zip` from the
+[Releases](https://github.com/advaita-saha/nim-pdftools/releases) page and unzip
+`pdftools.exe`.
+
+To build from source instead, see below.
+
 ## Build
 
 ```sh
