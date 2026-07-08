@@ -8,14 +8,22 @@
 ## alongside the existing `unlock` command.
 
 import
-  std/[parseopt, os, terminal],
+  std/[parseopt, os, terminal, strutils],
   pdf/writer,
   pdf/security
 
-const version = "pdftools 0.1.0"
+const
+  versionNumber = "0.1.0"
+  gitHash = staticExec("git rev-parse --short HEAD").strip()
+  version =
+    "pdftools " & versionNumber &
+    (if gitHash.len > 0: " (" & gitHash & ")" else: "")
+  copyright = "Copyright (c) 2026 Advaita Saha. MIT License."
 
-const topUsage = """
-pdftools — a command-line toolbox for PDF files
+const banner = version & "\n" & copyright & "\n\n"
+
+const topUsage = banner & """
+pdftools — a pure-Nim, zero-dependency command-line toolbox for PDF files
 
 Usage:
   pdftools <command> [options]
@@ -24,12 +32,13 @@ Commands:
   unlock    Decrypt (unlock) a password-protected PDF.
 
 Run 'pdftools <command> --help' for command-specific options.
+
 Global:
   -h, --help       Show this help.
       --version    Show version.
 """
 
-const unlockUsage = """
+const unlockUsage = banner & """
 pdftools unlock — decrypt a password-protected PDF
 
 Usage:
@@ -150,7 +159,7 @@ proc main() =
   let rest = params[1 .. ^1]
   case cmd
   of "-h", "--help", "help": echo topUsage; quit(0)
-  of "--version", "version": echo version; quit(0)
+  of "--version", "version": echo version; echo copyright; quit(0)
   of "unlock": cmdUnlock(rest)
   else:
     stderr.writeLine("pdftools: unknown command '" & cmd & "'")
