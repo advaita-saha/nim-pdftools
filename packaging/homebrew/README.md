@@ -1,8 +1,9 @@
 # Homebrew packaging
 
 `pdftools` is distributed for Homebrew as **pre-built binaries** through a personal tap.
-The `Release` workflow (`.github/workflows/release.yml`) does everything on a tag push;
-these are the one-time bootstrap steps.
+The `Release` workflow (`.github/workflows/release.yml`) builds and drafts a release on a
+tag push, then updates the tap formula when you publish that draft. These are the one-time
+bootstrap steps.
 
 ## One-time setup
 
@@ -16,19 +17,26 @@ these are the one-time bootstrap steps.
    read/write**, then add it to *this* repo as a secret named **`TAP_GITHUB_TOKEN`**
    (Settings → Secrets and variables → Actions).
 
-## Cutting a release
+## Cutting a release (two phases)
+
+**1. Push a tag** — builds the binaries and creates a **draft** GitHub Release:
 
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow then:
-1. builds `pdftools` for macos-arm64, linux-amd64, linux-arm64, and windows-amd64;
-2. publishes a GitHub Release with `pdftools-<version>-<os>-<arch>.tar.gz` + `.sha256`
-   (Windows ships as a `.zip`);
-3. renders `pdftools.rb.tmpl` with the real checksums and pushes `Formula/pdftools.rb`
-   to the tap.
+This builds `pdftools` for macos-arm64, linux-amd64, linux-arm64, and windows-amd64,
+attaches `pdftools-<version>-<os>-<arch>.tar.gz` (Windows ships as a `.zip`), and writes
+the SHA-256 checksums into the release notes.
+
+**2. Publish the draft** — review it in the GitHub UI and click **Publish release**. That
+fires the `release: published` event, which renders `pdftools.rb.tmpl` with the real
+checksums and pushes `Formula/pdftools.rb` to the tap.
+
+The formula update is gated on *publish* on purpose: a draft release's assets are not
+served from the public `releases/download/...` URLs, so the formula must only point at
+them once the release is live.
 
 The Windows build is a direct-download release asset only — Homebrew is macOS/Linux, so
 Windows is not part of the formula.
