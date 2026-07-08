@@ -21,8 +21,8 @@ type
     of pkNull: discard
     of pkBool: b*: bool
     of pkInt: i*: int64
-    of pkReal: rawf*: string          ## original textual token (round-trips exactly)
-    of pkStr: s*: seq[byte]           ## decoded string bytes
+    of pkReal: rawf*: string         ## original textual token (round-trips exactly)
+    of pkStr: s*: seq[byte]          ## decoded string bytes
     of pkName: name*: string
     of pkArray: arr*: seq[PdfObj]
     of pkDict: d*: OrderedTable[string, PdfObj]
