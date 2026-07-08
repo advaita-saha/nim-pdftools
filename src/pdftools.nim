@@ -8,9 +8,10 @@
 ## alongside the existing `unlock` command.
 
 import
-  std/[parseopt, os, terminal],
+  std/[parseopt, os, terminal, strutils],
   pdf/writer,
-  pdf/security
+  pdf/security,
+  pdf/compress
 
 const version = "pdftools 0.1.0"
 
@@ -22,6 +23,7 @@ Usage:
 
 Commands:
   unlock    Decrypt (unlock) a password-protected PDF.
+  compress  Losslessly shrink a PDF (Flate streams + object/xref streams).
 
 Run 'pdftools <command> --help' for command-specific options.
 Global:
@@ -47,6 +49,24 @@ unless -o is given; the write is atomic (temp file + rename) so a wrong password
 or error never corrupts the input.
 """
 
+const compressUsage = """
+pdftools compress — losslessly shrink a PDF
+
+Usage:
+  pdftools compress [options] <input.pdf>
+
+Options:
+  -o, --out:<path>        Write to <path> instead of overwriting <input.pdf> in place.
+      --keep-backup       Keep <input.pdf>.bak when overwriting in place.
+  -h, --help              Show this help.
+
+Compression is lossless: every stream that is not already compressed is wrapped
+in FlateDecode, small objects are packed into a compressed object stream, and the
+cross-reference table is rebuilt as a compact /XRef stream. Text and vectors stay
+byte-for-byte identical (no image re-sampling). Encrypted PDFs must be unlocked
+first. The write is atomic (temp file + rename).
+"""
+
 proc readPasswordFile(path: string): string =
   let content = readFile(path)
   result = content
@@ -56,6 +76,32 @@ proc readPasswordFile(path: string): string =
 proc fail(msg: string) =
   stderr.writeLine("pdftools: " & msg)
   quit(1)
+
+proc resolveOutPath(input, outPath: string): string =
+  ## If -o names an existing directory, write into it using the input's
+  ## basename (so `-o .` means "here"); otherwise use the path as given.
+  result = outPath
+  if outPath.len > 0 and dirExists(outPath):
+    result = outPath / extractFilename(input)
+
+proc writeOut(input, outPath: string, keepBackup: bool, bytes: seq[byte],
+              doneMsg: string) =
+  ## Shared output path: -o writes to a named file, otherwise overwrite the
+  ## input atomically (temp file + rename), optionally keeping a .bak.
+  try:
+    if outPath.len > 0:
+      writeFile(outPath, cast[string](bytes))
+    else:
+      let dir = parentDir(input)
+      let tmp = (if dir.len > 0: dir else: ".") /
+        ("." & extractFilename(input) & ".pdftools.tmp")
+      writeFile(tmp, cast[string](bytes))
+      if keepBackup:
+        copyFile(input, input & ".bak")
+      moveFile(tmp, input)
+  except OSError, IOError:
+    fail("could not write output: " & getCurrentExceptionMsg())
+  stderr.writeLine("pdftools: " & doneMsg)
 
 proc cmdUnlock(args: seq[string]) =
   var
@@ -124,21 +170,74 @@ proc cmdUnlock(args: seq[string]) =
   except CatchableError as e:
     fail("failed to unlock: " & e.msg)
 
-  if outPath.len > 0:
-    writeFile(outPath, cast[string](res.output))
-    stderr.writeLine("pdftools: wrote unlocked PDF to " & outPath &
-      (if res.usedOwnerPassword: " (owner password)" else: ""))
-  else:
-    # Atomic in-place overwrite: write to a temp file then rename over the original.
-    let dir = parentDir(input)
-    let tmp = (if dir.len > 0: dir else: ".") / ("." & extractFilename(input) & ".pdftools.tmp")
-    writeFile(tmp, cast[string](res.output))
-    if keepBackup:
-      copyFile(input, input & ".bak")
-    moveFile(tmp, input)
-    stderr.writeLine("pdftools: unlocked " & input & " in place" &
-      (if keepBackup: " (backup at " & input & ".bak)" else: "") &
-      (if res.usedOwnerPassword: " [owner password]" else: ""))
+  var effOut = resolveOutPath(input, outPath)
+  if effOut.len > 0 and absolutePath(effOut) == absolutePath(input):
+    effOut = ""                              # writing over the input == in-place
+  let owner = if res.usedOwnerPassword: " [owner password]" else: ""
+  let doneMsg =
+    if effOut.len > 0: "wrote unlocked PDF to " & effOut & owner
+    else: "unlocked " & input & " in place" &
+      (if keepBackup: " [backup at " & input & ".bak]" else: "") & owner
+  writeOut(input, effOut, keepBackup, res.output, doneMsg)
+
+proc cmdCompress(args: seq[string]) =
+  var
+    input = ""
+    outPath = ""
+    keepBackup = false
+  var
+    pending = ""
+    p = initOptParser(args)
+  for kind, key, val in p.getopt():
+    case kind
+    of cmdArgument:
+      case pending
+      of "out": outPath = key
+      else:
+        if input.len == 0: input = key
+        else: fail("unexpected extra argument: " & key)
+      pending = ""
+    of cmdShortOption, cmdLongOption:
+      case key
+      of "o", "out":
+        if val.len > 0: outPath = val else: pending = "out"
+      of "keep-backup": keepBackup = true
+      of "h", "help": echo compressUsage; quit(0)
+      else: fail("unknown option: " & key)
+    of cmdEnd: discard
+
+  if input.len == 0:
+    echo compressUsage
+    quit(1)
+  if not fileExists(input):
+    fail("input file not found: " & input)
+
+  let data =
+    try: cast[seq[byte]](readFile(input))
+    except IOError as e: fail("could not read input: " & e.msg); @[]
+
+  var res: CompressResult
+  try:
+    res = compress(data)
+  except EncryptedError as e:
+    fail(e.msg)
+  except CatchableError as e:
+    fail("failed to compress: " & e.msg)
+
+  # Never grow the file: if compression didn't help, keep the original bytes.
+  let output = if res.compressedSize < res.originalSize: res.output else: data
+  let saved = res.originalSize - output.len
+  let pct =
+    if res.originalSize > 0: formatFloat(saved / res.originalSize * 100, ffDecimal, 1)
+    else: "0.0"
+  var effOut = resolveOutPath(input, outPath)
+  if effOut.len > 0 and absolutePath(effOut) == absolutePath(input):
+    effOut = ""                              # writing over the input == in-place
+  let where = if effOut.len > 0: "wrote " & effOut else: "compressed " & input & " in place"
+  writeOut(input, effOut, keepBackup, output,
+    where & ": " & $res.originalSize & " -> " & $output.len & " bytes (" &
+    (if saved > 0: "-" & pct & "%" else: "no reduction") & ")" &
+    (if keepBackup and effOut.len == 0: " [backup at " & input & ".bak]" else: ""))
 
 proc main() =
   let params = commandLineParams()
@@ -152,6 +251,7 @@ proc main() =
   of "-h", "--help", "help": echo topUsage; quit(0)
   of "--version", "version": echo version; quit(0)
   of "unlock": cmdUnlock(rest)
+  of "compress": cmdCompress(rest)
   else:
     stderr.writeLine("pdftools: unknown command '" & cmd & "'")
     echo topUsage
