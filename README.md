@@ -115,6 +115,9 @@ single-revision PDF with a classic cross-reference table and no `/Encrypt` entry
 
 ## How it works
 
+See [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) for a full walkthrough of PDF
+encryption and this tool's implementation. In short:
+
 1. Scan the raw bytes for every `N G obj … endobj` indirect object (robust against
    broken cross-reference tables and incremental updates).
 2. Read the trailer / cross-reference-stream dictionary (always plaintext) to find
