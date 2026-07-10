@@ -1,0 +1,26 @@
+# nfpm config for building the pdftools .deb (https://nfpm.goreleaser.com).
+# The release workflow renders this file with `envsubst` first, filling VERSION,
+# DEB_ARCH and BIN_PATH from environment variables, then passes the result to nfpm.
+name: pdftools
+arch: ${DEB_ARCH}
+platform: linux
+version: ${VERSION}
+maintainer: "Advaita Saha <adv11sphs@gmail.com>"
+description: |
+  Pure-Nim, zero-dependency CLI toolbox for PDF files.
+  Decrypt (unlock) and losslessly compress PDFs. No runtime dependencies
+  beyond the C library.
+vendor: "Advaita Saha"
+homepage: "https://github.com/advaita-saha/nim-pdftools"
+license: "MIT"
+section: utils
+priority: optional
+# The binaries are built on the ubuntu-22.04 runners (glibc 2.35), so declare that
+# floor: apt then refuses to install on older systems (Debian 11, Ubuntu 20.04)
+# with a clear dependency error instead of letting it fail at runtime with
+# "GLIBC_2.35 not found". Bump this if the build runner's glibc changes.
+depends:
+  - libc6 (>= 2.35)
+contents:
+  - src: ${BIN_PATH}
+    dst: /usr/bin/pdftools

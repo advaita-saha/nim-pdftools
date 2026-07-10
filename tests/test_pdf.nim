@@ -9,14 +9,10 @@
 
 import
   std/tables,
+  unittest2,
   ../src/pdf/objects,
   ../src/pdf/security,
   ../src/pdf/writer
-
-var failures = 0
-proc check(name: string, cond: bool) =
-  if cond: echo "ok   ", name
-  else: (inc failures; echo "FAIL ", name)
 
 proc bytesOf(s: string): seq[byte] =
   result = newSeq[byte](s.len)
@@ -57,82 +53,53 @@ const
   baseFixture = staticRead("fixtures/base.pdf")
   r6Fixture = staticRead("fixtures/aes-256-r6.pdf")
 
-# ---------------------------------------------------------------------------
-# End-to-end: decrypt each fixture with the user password.
-# ---------------------------------------------------------------------------
-for name, raw in fixtures.items:
-  let
-    data = bytesOf(raw)
-    res = unlock(data, "user123")
-  # The decrypted /Info /Title must round-trip.
-  var titleOk = false
-  for io in scanObjects(res.output):
-    if findString(io.value, "Confidential Title String"): titleOk = true
-  check name & ": title string decrypted", titleOk
-  # The output must no longer be encrypted: a second unlock reports so.
-  var stripped = false
-  try:
-    discard unlock(res.output, "")
-  except NotEncryptedError:
-    stripped = true
-  check name & ": /Encrypt removed from output", stripped
+suite "decrypt fixtures with user password":
+  for name, raw in fixtures.items:
+    test name:
+      let res = unlock(bytesOf(raw), "user123")
+      # The decrypted /Info /Title must round-trip.
+      var titleOk = false
+      for io in scanObjects(res.output):
+        if findString(io.value, "Confidential Title String"): titleOk = true
+      check titleOk
+      # The output must no longer be encrypted: a second unlock reports so.
+      expect NotEncryptedError:
+        discard unlock(res.output, "")
 
-# ---------------------------------------------------------------------------
-# Owner password and wrong password.
-# ---------------------------------------------------------------------------
-block:
-  let
-    data = bytesOf(r6Fixture)
-    res = unlock(data, "owner456")
-  check "owner password accepted", res.usedOwnerPassword
-  var rejected = false
-  try:
-    discard unlock(data, "definitely-wrong")
-  except SecError:
-    rejected = true
-  check "wrong password rejected", rejected
+suite "password handling":
+  test "owner password accepted":
+    let res = unlock(bytesOf(r6Fixture), "owner456")
+    check res.usedOwnerPassword
 
-# ---------------------------------------------------------------------------
-# Unit test: object-stream decomposition.
-# ---------------------------------------------------------------------------
-block:
-  # Build an uncompressed ObjStm body holding three objects (10, 11, 12).
-  let
-    o10 = "<< /Type /Catalog /Pages 2 0 R >>"
-    o11 = "(an inner string)"
-    o12 = "[1 2 3]"
-    header = "10 0 11 " & $o10.len & " 12 " & $(o10.len + o11.len) & " "
-  # offsets are relative to /First (= header length)
-  let body = header & o10 & o11 & o12
-  var sd = initOrderedTable[string, PdfObj]()
-  sd["N"] = PdfObj(kind: pkInt, i: 3)
-  sd["First"] = PdfObj(kind: pkInt, i: int64(header.len))
-  let extracted = decomposeObjStm(sd, bytesOf(body))
-  check "ObjStm: extracted 3 objects", extracted.len == 3
-  if extracted.len == 3:
-    check "ObjStm: object numbers", extracted[0].num == 10 and
-      extracted[1].num == 11 and extracted[2].num == 12
-    check "ObjStm: inner dict parsed",
-      extracted[0].value.kind == pkDict and
-      dictGet(extracted[0].value, "Type").name == "Catalog"
-    check "ObjStm: inner string parsed",
-      extracted[1].value.kind == pkStr and
-      strOf(extracted[1].value.s) == "an inner string"
+  test "wrong password rejected":
+    let data = bytesOf(r6Fixture)
+    expect SecError:
+      discard unlock(data, "definitely-wrong")
 
-# ---------------------------------------------------------------------------
-# Unit test: not-encrypted input is reported.
-# ---------------------------------------------------------------------------
-block:
-  let data = bytesOf(baseFixture)
-  var reported = false
-  try:
-    discard unlock(data, "")
-  except NotEncryptedError:
-    reported = true
-  check "plain PDF reported as not encrypted", reported
+suite "object streams":
+  test "ObjStm decomposition":
+    # Build an uncompressed ObjStm body holding three objects (10, 11, 12).
+    let
+      o10 = "<< /Type /Catalog /Pages 2 0 R >>"
+      o11 = "(an inner string)"
+      o12 = "[1 2 3]"
+      header = "10 0 11 " & $o10.len & " 12 " & $(o10.len + o11.len) & " "
+    # offsets are relative to /First (= header length)
+    let body = header & o10 & o11 & o12
+    var sd = initOrderedTable[string, PdfObj]()
+    sd["N"] = PdfObj(kind: pkInt, i: 3)
+    sd["First"] = PdfObj(kind: pkInt, i: int64(header.len))
+    let extracted = decomposeObjStm(sd, bytesOf(body))
+    require extracted.len == 3
+    check extracted[0].num == 10
+    check extracted[1].num == 11
+    check extracted[2].num == 12
+    check extracted[0].value.kind == pkDict
+    check dictGet(extracted[0].value, "Type").name == "Catalog"
+    check extracted[1].value.kind == pkStr
+    check strOf(extracted[1].value.s) == "an inner string"
 
-if failures == 0:
-  echo "\nALL PDF TESTS PASSED"
-else:
-  echo "\n", failures, " FAILURES"
-  quit(1)
+suite "plaintext input":
+  test "plain PDF reported as not encrypted":
+    expect NotEncryptedError:
+      discard unlock(bytesOf(baseFixture), "")

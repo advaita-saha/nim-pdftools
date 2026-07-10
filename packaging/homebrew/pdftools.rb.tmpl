@@ -1,0 +1,36 @@
+# Template rendered by .github/workflows/release.yml (envsubst) into the
+# advaita-saha/homebrew-tap repo as Formula/pdftools.rb on every tag push.
+# ${VERSION} and the ${SHA_*} values are filled from the release artifacts;
+# the #{version} interpolations are evaluated by Homebrew/Ruby at install time.
+class Pdftools < Formula
+  desc "Pure-Nim, zero-dependency CLI toolbox for PDF files"
+  homepage "https://github.com/advaita-saha/nim-pdftools"
+  version "${VERSION}"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/advaita-saha/nim-pdftools/releases/download/v#{version}/pdftools-#{version}-macos-arm64.tar.gz"
+      sha256 "${SHA_MACOS_ARM64}"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/advaita-saha/nim-pdftools/releases/download/v#{version}/pdftools-#{version}-linux-arm64.tar.gz"
+      sha256 "${SHA_LINUX_ARM64}"
+    end
+    on_intel do
+      url "https://github.com/advaita-saha/nim-pdftools/releases/download/v#{version}/pdftools-#{version}-linux-amd64.tar.gz"
+      sha256 "${SHA_LINUX_AMD64}"
+    end
+  end
+
+  def install
+    bin.install "pdftools"
+  end
+
+  test do
+    assert_match "pdftools #{version}", shell_output("#{bin}/pdftools --version")
+  end
+end
